@@ -2,7 +2,6 @@ package tree
 
 import (
 	"errors"
-	"fmt"
 	"sort"
 )
 
@@ -16,66 +15,35 @@ type Node struct {
 	ID       int
 	Children []*Node
 }
-type Nodes []*Node
-type Mismatch struct{}
 
-func (m Mismatch) Error() string {
-	return "c"
-}
-func (slice Nodes) Len() int {
-	return len(slice)
-}
+var (
+	errNonContinuous          = errors.New("records are non-continuous")
+	errRootHasParent          = errors.New("root node has parent other than itself")
+	errParentGreaterThanChild = errors.New("record has parent that does not exist")
+)
 
-func (slice Nodes) Less(i, j int) bool {
-	return slice[i].ID < slice[j].ID
-}
-
-func (slice Nodes) Swap(i, j int) {
-	slice[i], slice[j] = slice[j], slice[i]
-}
 func Build(records []Record) (*Node, error) {
 	recordLength := len(records)
 	if recordLength == 0 {
 		return nil, nil
 	}
-	root := &Node{}
-	todo := []*Node{root}
-	n := 1
-	for len(todo) > 0 {
-		newTodo := []*Node(nil)
-		for _, c := range todo {
-			for i := len(records) - 1; i >= 0; i-- {
-				r := records[i]
-				if r.ID >= recordLength {
-					return nil, errors.New("The ID number must be between 0 (inclusive) and the length of the record list (exclusive)")
-				}
-				if r.Parent == c.ID {
-					switch {
-					case r.ID < c.ID:
-						return nil, errors.New("Higher id parent of lower id")
-					case r.ID == c.ID:
-						if r.ID != 0 {
-							return nil, fmt.Errorf("Only root record has a parent ID that's equal to its own ID")
-						}
-					default:
-						n++
-						nn := &Node{ID: r.ID}
-						newTodo = append(newTodo, nn)
-						c.Children = append(c.Children, nn)
-						records = remove(records, i)
-					}
-				}
-			}
-			sort.Sort(Nodes(c.Children))
+	nodes := make([]Node, recordLength)
+	sort.Slice(records, func(i, j int) bool { return records[i].ID < records[j].ID })
+	for i, r := range records {
+		if i != r.ID {
+			return nil, errNonContinuous
 		}
-		todo = newTodo
+		if i == 0 {
+			if r.ID != r.Parent {
+				return nil, errRootHasParent
+			}
+		} else {
+			if r.ID <= r.Parent {
+				return nil, errParentGreaterThanChild
+			}
+			nodes[i].ID = i
+			nodes[r.Parent].Children = append(nodes[r.Parent].Children, &nodes[i])
+		}
 	}
-	if n != recordLength {
-		return nil, Mismatch{}
-	}
-	return root, nil
-}
-func remove(s []Record, i int) []Record {
-	s[len(s)-1], s[i] = s[i], s[len(s)-1]
-	return s[:len(s)-1]
+	return &nodes[0], nil
 }
